@@ -15,6 +15,11 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 OS_UPRN_PARQUET = Path(os.getenv("OS_UPRN_PARQUET") or (DATA_DIR / "os_uprn.parquet")).resolve()
 
+# OS Places API (address → UPRN matching). Key from the OS Data Hub.
+OS_PLACES_API_KEY = os.getenv("OS_PLACES_API_KEY")
+OS_PLACES_MIN_SCORE = float(os.getenv("OS_PLACES_MIN_SCORE") or "0.4")
+OS_PLACES_RATE_MS = int(os.getenv("OS_PLACES_RATE_MS") or "120")
+
 
 def target_db_url(council: str | None = None) -> str | None:
     """Resolve the Postgres URL for a council's isolated backend.

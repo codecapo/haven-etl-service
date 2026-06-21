@@ -25,12 +25,37 @@ def run(
     load: bool = False,
     table: str = "property",
     dry_run: bool = False,
+    match: bool = False,
+    min_score: float | None = None,
+    matcher=None,
 ) -> dict:
     out_dir = Path(out_dir) if out_dir else DATA_DIR
     mapper = _mapper(council)
 
     rows = mapper.parse(file)
     candidates_csv = write_candidates_csv(rows, out_dir / f"{council}_candidates.csv")
+
+    # Address→UPRN matching for no-UPRN stock (OS Places API). Fills UPRNs above
+    # the confidence threshold; low/no matches go to <council>_match_audit.csv.
+    match_stats = None
+    if match:
+        from .match import match_candidates
+        from .config import OS_PLACES_API_KEY, OS_PLACES_MIN_SCORE, OS_PLACES_RATE_MS
+
+        if matcher is None:
+            from .os_places import OsPlacesMatcher
+
+            matcher = OsPlacesMatcher(OS_PLACES_API_KEY, rate_ms=OS_PLACES_RATE_MS)
+        matched_csv = out_dir / f"{council}_candidates_matched.csv"
+        match_stats = match_candidates(
+            candidates_csv,
+            matched_csv,
+            matcher,
+            min_score=min_score if min_score is not None else OS_PLACES_MIN_SCORE,
+            audit_csv=out_dir / f"{council}_match_audit.csv",
+        )
+        candidates_csv = matched_csv
+
     enriched = enrich(candidates_csv, council=council, out_dir=out_dir)
 
     result = {
@@ -38,6 +63,7 @@ def run(
         "source_file": str(file),
         "parsed_rows": len(rows),
         "candidates_csv": str(candidates_csv),
+        **({"match": match_stats} if match_stats is not None else {}),
         **{k: (str(v) if isinstance(v, Path) else v) for k, v in enriched.items()},
     }
 

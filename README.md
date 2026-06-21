@@ -15,9 +15,13 @@ data and loads it into each council's database. It never co-mingles council data
 3. **Enrich** — DuckDB joins exploded stock → OS UPRN to fill coordinates.
 4. **Load** — upsert the matched properties into that council's Postgres.
 
-Rows **without a UPRN** can't be loaded yet (the `property` table is keyed by
-UPRN); they're parked in `<council>_unmatched.parquet` for the future
-address→UPRN matching phase (needs OS AddressBase / a geocoder).
+Rows **without a UPRN** can be resolved with the **OS Places API** matcher
+(`--match`): each address is looked up to its authoritative UPRN (flat-aware,
+which a coordinate snap can't do). Confident matches (score ≥ `--min-score`) get
+a UPRN and load normally; weaker / no matches keep an empty UPRN (→
+`<council>_unmatched.parquet`) and are listed in `<council>_match_audit.csv` for
+human review. Without `--match` (or an API key), no-UPRN rows simply park in the
+unmatched output.
 
 ## Setup
 
@@ -38,9 +42,13 @@ python -m haven_etl os-uprn --zip /path/osopenuprn_202605_csv.zip
 #    Fast test slice:
 python -m haven_etl os-uprn --zip /path/osopenuprn_202605_csv.zip --sample 500000
 
-# 2) Ingest a council's stock (parse → explode → enrich). Add --load to write to PG.
+# 2) Ingest a council's stock (parse → explode → [match] → enrich). --load writes to PG.
 python -m haven_etl ingest --council camden --file "/path/Camden_*.xlsx"
 python -m haven_etl ingest --council camden --file "/path/Camden_*.xlsx" --load --dry-run
+
+# 2b) Stock WITHOUT UPRNs? Match addresses → UPRNs via the OS Places API:
+#     (needs OS_PLACES_API_KEY; low/no-confidence rows go to <council>_match_audit.csv)
+python -m haven_etl ingest --council camden --file "/path/Camden_*.xlsx" --match --min-score 0.4
 
 # Inspect a Parquet artifact.
 python -m haven_etl stats --parquet data/os_uprn.parquet
