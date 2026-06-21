@@ -24,21 +24,21 @@ def check(label, ok, detail=""):
         failures += 1
 
 
-print("1. Linked Identifiers parser (shape-agnostic, no network)")
+print("1. Linked Identifiers parser (real OS response shape)")
 payload = {
-    "linkedIdentifiers": [
-        {"correlations": [{"correlatedIdentifiers": [
-            {"identifier": "100023002", "identifierType": "UPRN"},
-            {"identifier": "20900493", "identifierType": "USRN"},
-        ]}]},
-        {"correlations": [{"correlatedIdentifiers": [
-            {"identifier": "osgb1000005207182", "identifierType": "TOID"},
-        ]}]},
-    ]
+    "linkedIdentifier": {"identifier": "5071190", "featureType": "BLPU", "identifierType": "UPRN"},
+    "correlations": [
+        {"correlatedFeatureType": "TopographicArea", "correlatedIdentifierType": "TOID",
+         "correlatedIdentifiers": [{"identifier": "osgb1000005300568"}]},
+        {"correlatedFeatureType": "Street", "correlatedIdentifierType": "USRN",
+         "correlatedIdentifiers": [{"identifier": "20400325"}]},
+        {"correlatedFeatureType": "RoadLink", "correlatedIdentifierType": "TOID",
+         "correlatedIdentifiers": [{"identifier": "osgb4000000030153129"}]},
+    ],
 }
 ids = OsLinksMatcher.parse(payload)
-check("extracts USRN", ids.usrn == "20900493", str(ids))
-check("extracts TOID", ids.toid == "osgb1000005207182", str(ids))
+check("extracts USRN", ids.usrn == "20400325", str(ids))
+check("prefers building (TopographicArea) TOID over RoadLink", ids.toid == "osgb1000005300568", str(ids))
 empty = OsLinksMatcher.parse({})
 check("empty payload → no ids", empty.usrn is None and empty.toid is None)
 

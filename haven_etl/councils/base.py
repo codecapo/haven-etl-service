@@ -36,6 +36,24 @@ _PAREN = re.compile(r"\([^)]*\)")
 _RANGE = re.compile(r"(\d+)\s*[-–]\s*(\d+)")
 # A leading single number ("8 Romford Road") when there's no range.
 _LEADING_NUM = re.compile(r"^\s*(\d+)\b")
+# Lettered flats: "Flats A-D", "Flat A&B", "Flats A - C".
+_FLAT_LETTERS = re.compile(r"\bflats?\s+([A-Za-z])\s*(?:[-–]\s*([A-Za-z])|(&[\sA-Za-z&]*[A-Za-z]))", re.I)
+
+
+def _flat_letters(address: str) -> list[str]:
+    """The unit letters from a 'Flats A-D' / 'Flat A&B' address, else []."""
+    m = _FLAT_LETTERS.search(address)
+    if not m:
+        return []
+    start = m.group(1).upper()
+    if m.group(2):  # contiguous range A-D
+        lo, hi = sorted([ord(start), ord(m.group(2).upper())])
+        return [chr(c) for c in range(lo, hi + 1)] if hi - lo < 26 else []
+    out = [start]  # ampersand list "A&B" / "A & B & C"
+    for L in re.findall(r"[A-Za-z]", m.group(3) or ""):
+        if L.upper() not in out:
+            out.append(L.upper())
+    return out
 
 # Sanity cap so a malformed "1-999999" can't explode into a runaway loop.
 MAX_UNITS_PER_BLOCK = 2000
@@ -94,19 +112,12 @@ def explode_block(
         return []
 
     ref_stem = (block_code or re.sub(r"\W+", "_", address)).strip()
-    name = _base_name(address)
     rows: list[PropertyRow] = []
 
-    def make(num: int | None) -> PropertyRow:
-        if num is not None:
-            line1 = f"{num} {name}".strip()
-            ref = f"{ref_stem}/{num}"
-        else:
-            line1 = address
-            ref = ref_stem
+    def row(line1: str, ref_suffix: str | None) -> PropertyRow:
         return PropertyRow(
-            property_reference=ref,
-            address_line1=line1,
+            property_reference=f"{ref_stem}/{ref_suffix}" if ref_suffix else ref_stem,
+            address_line1=line1.strip(),
             postcode=postcode or None,
             estate=estate or None,
             tenure=tenure or None,
@@ -114,6 +125,15 @@ def explode_block(
             source_council=council,
         )
 
+    # Lettered flats ("35 Argyle Square (Flats A-D)") → one property per letter.
+    letters = _flat_letters(address)
+    if letters:
+        base = _base_name(_FLAT_LETTERS.sub("", address))
+        return [row(f"Flat {L}, {base}", L) for L in letters]
+
+    name = _base_name(address)
+
+    # Numeric door-number ranges ("1-160", "1-61 & 95-117").
     ranges = _RANGE.findall(address)
     if ranges:
         seen: set[int] = set()
@@ -126,14 +146,10 @@ def explode_block(
             for n in range(lo, hi + 1):
                 if n not in seen:
                     seen.add(n)
-                    rows.append(make(n))
+                    rows.append(row(f"{n} {name}", str(n)))
         return rows
 
+    # No range — fall back to the unit count, else a single addressable property.
     if units and units > 0:
-        for n in range(1, min(int(units), MAX_UNITS_PER_BLOCK) + 1):
-            rows.append(make(n))
-        return rows
-
-    # No range, no count — a single addressable property (use the address as-is).
-    rows.append(make(None))
-    return rows
+        return [row(f"{n} {name}", str(n)) for n in range(1, min(int(units), MAX_UNITS_PER_BLOCK) + 1)]
+    return [row(address, None)]

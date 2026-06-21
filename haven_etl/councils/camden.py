@@ -11,6 +11,7 @@ output.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -25,13 +26,21 @@ _ALIASES = {
     "block_address": {"block address", "address", "block name"},
     "estate": {"estate", "street / estate", "street/estate"},
     "units": {"units", "no of units", "number of units", "no. of units"},
-    "postcode": {"postcode", "post code"},
+    "postcode": {"postcode", "post code", "postcode(s) found", "postcode found", "postcodes"},
     "uprn": {"uprn"},
 }
 
 
 def _norm(v) -> str:
     return str(v).strip().lower() if v is not None else ""
+
+
+def _first_postcode(v) -> str | None:
+    """A single postcode from cells that may list several ('NW5 1NA / NW5 1NB')."""
+    if not v:
+        return None
+    first = re.split(r"[\/,;]| or ", str(v).strip(), maxsplit=1)[0].strip()
+    return first or None
 
 
 def _find_header(ws, max_scan: int = 15) -> tuple[int, dict[str, int]] | None:
@@ -82,7 +91,7 @@ def parse(path: str | Path) -> list[PropertyRow]:
                     block_address=str(block_address).strip(),
                     units=units,
                     estate=(str(cell(values, "estate")).strip() if cell(values, "estate") else None),
-                    postcode=(str(cell(values, "postcode")).strip() if cell(values, "postcode") else None),
+                    postcode=_first_postcode(cell(values, "postcode")),
                 )
             )
         wb.close()

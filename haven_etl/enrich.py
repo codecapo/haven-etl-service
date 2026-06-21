@@ -52,11 +52,18 @@ def enrich(
     has_os = os_parquet.exists()
 
     # Matched: rows with a UPRN. Coordinates come from OS Open UPRN when available.
-    coord_select = (
-        f"o.latitude AS latitude, o.longitude AS longitude"
-        if has_os
-        else "CAST(NULL AS DOUBLE) AS latitude, CAST(NULL AS DOUBLE) AS longitude"
-    )
+    # Prefer coordinates already on the candidate (e.g. from the OS Places
+    # postcode match), falling back to the OS Open UPRN reference by UPRN.
+    if has_os:
+        coord_select = (
+            "COALESCE(TRY_CAST(NULLIF(c.latitude,'') AS DOUBLE), o.latitude) AS latitude, "
+            "COALESCE(TRY_CAST(NULLIF(c.longitude,'') AS DOUBLE), o.longitude) AS longitude"
+        )
+    else:
+        coord_select = (
+            "TRY_CAST(NULLIF(c.latitude,'') AS DOUBLE) AS latitude, "
+            "TRY_CAST(NULLIF(c.longitude,'') AS DOUBLE) AS longitude"
+        )
     coord_join = (
         f"LEFT JOIN read_parquet('{os_parquet.as_posix()}') o ON TRY_CAST(c.uprn AS BIGINT) = o.uprn"
         if has_os

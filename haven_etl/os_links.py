@@ -27,19 +27,9 @@ class LinkedIds:
     toid: str | None
 
 
-def _collect(node, found: dict) -> None:
-    """Recursively gather the first identifier of each type from any response
-    shape (the API nests correlations differently across correlation methods)."""
-    if isinstance(node, dict):
-        itype = node.get("identifierType")
-        ident = node.get("identifier")
-        if isinstance(itype, str) and ident is not None and itype.upper() not in found:
-            found[itype.upper()] = str(ident)
-        for v in node.values():
-            _collect(v, found)
-    elif isinstance(node, list):
-        for v in node:
-            _collect(v, found)
+def _corr_value(corr: dict) -> str | None:
+    ids = corr.get("correlatedIdentifiers") or []
+    return str(ids[0]["identifier"]) if ids and ids[0].get("identifier") else None
 
 
 class OsLinksMatcher:
@@ -99,10 +89,26 @@ class OsLinksMatcher:
 
     @staticmethod
     def parse(payload: dict | None) -> LinkedIds:
-        """Pure parser — pull USRN + TOID out of any response shape."""
-        found: dict = {}
-        _collect(payload, found)
-        return LinkedIds(usrn=found.get("USRN"), toid=found.get("TOID"))
+        """Pull the USRN (street) and the building TOID from the correlations.
+
+        A UPRN links to several identifiers; we want the USRN and the
+        TopographicArea TOID (the building), preferring it over the RoadLink TOID
+        (the road) which is also returned."""
+        correlations = (payload or {}).get("correlations") or []
+        usrn = None
+        toid_building = None
+        toid_any = None
+        for corr in correlations:
+            ctype = corr.get("correlatedIdentifierType")
+            if ctype == "USRN" and usrn is None:
+                usrn = _corr_value(corr)
+            elif ctype == "TOID":
+                val = _corr_value(corr)
+                if val and toid_any is None:
+                    toid_any = val
+                if corr.get("correlatedFeatureType") == "TopographicArea" and toid_building is None:
+                    toid_building = val
+        return LinkedIds(usrn=usrn, toid=toid_building or toid_any)
 
     def lookup(self, uprn: str) -> LinkedIds:
         uprn = (uprn or "").strip()

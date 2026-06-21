@@ -28,6 +28,8 @@ def run(
     match: bool = False,
     min_score: float | None = None,
     matcher=None,
+    match_require_postcode: bool = False,
+    match_max_calls: int | None = None,
     links: bool = False,
     links_matcher=None,
 ) -> dict:
@@ -41,20 +43,22 @@ def run(
     # the confidence threshold; low/no matches go to <council>_match_audit.csv.
     match_stats = None
     if match:
-        from .match import match_candidates
-        from .config import OS_PLACES_API_KEY, OS_PLACES_MIN_SCORE, OS_PLACES_RATE_MS
+        from .match import match_by_postcode
+        from .config import OS_API_KEY, OS_PLACES_RATE_MS
 
         if matcher is None:
             from .os_places import OsPlacesMatcher
 
-            matcher = OsPlacesMatcher(OS_PLACES_API_KEY, rate_ms=OS_PLACES_RATE_MS)
+            matcher = OsPlacesMatcher(OS_API_KEY, rate_ms=OS_PLACES_RATE_MS)
         matched_csv = out_dir / f"{council}_candidates_matched.csv"
-        match_stats = match_candidates(
+        # Postcode-batch matching: one billed call per distinct postcode, then
+        # exact local matching by flat number/letter + building name.
+        match_stats = match_by_postcode(
             candidates_csv,
             matched_csv,
             matcher,
-            min_score=min_score if min_score is not None else OS_PLACES_MIN_SCORE,
             audit_csv=out_dir / f"{council}_match_audit.csv",
+            max_calls=match_max_calls,  # caps NEW (billed) postcode calls
         )
         candidates_csv = matched_csv
 

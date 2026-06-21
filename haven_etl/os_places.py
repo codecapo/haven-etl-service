@@ -23,6 +23,7 @@ from pathlib import Path
 from .config import DATA_DIR
 
 FIND_URL = "https://api.os.uk/search/places/v1/find"
+POSTCODE_URL = "https://api.os.uk/search/places/v1/postcode"
 
 
 @dataclass
@@ -129,6 +130,70 @@ class OsPlacesMatcher:
         if self._dirty >= 25:
             self.flush()
         return match
+
+    def _fetch_postcode(self, postcode: str, offset: int) -> dict | None:
+        params = urllib.parse.urlencode(
+            {"postcode": postcode, "maxresults": 100, "offset": offset,
+             "output_srs": "EPSG:4326", "key": self.api_key}
+        )
+        url = f"{POSTCODE_URL}?{params}"
+        for attempt in range(self.max_retries):
+            self._throttle()
+            try:
+                with urllib.request.urlopen(url, timeout=self.timeout) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as e:
+                if e.code == 400:
+                    return None  # invalid/unknown postcode
+                if e.code in (429, 500, 502, 503) and attempt < self.max_retries - 1:
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                raise
+            except urllib.error.URLError:
+                if attempt < self.max_retries - 1:
+                    time.sleep(1.0 * (attempt + 1))
+                    continue
+                raise
+        return None
+
+    def postcode(self, postcode: str) -> list[dict]:
+        """All DPA address records in a postcode (one billed call, paged to 100s).
+        Cached by postcode — re-runs don't re-bill."""
+        pc = (postcode or "").strip().upper()
+        if not pc:
+            return []
+        key = f"PC::{pc}"
+        if key in self._cache:
+            return self._cache[key] or []
+        records: list[dict] = []
+        offset = 0
+        while True:
+            payload = self._fetch_postcode(pc, offset)
+            batch = [r["DPA"] for r in (payload or {}).get("results") or [] if r.get("DPA")]
+            records.extend(batch)
+            total = int((payload or {}).get("header", {}).get("totalresults") or 0)
+            offset += len(batch)
+            if len(batch) == 0 or offset >= total or offset >= 1000:
+                break
+        # Keep only the fields we match on (smaller cache).
+        slim = [
+            {
+                "UPRN": str(d.get("UPRN")),
+                "ADDRESS": d.get("ADDRESS", ""),
+                "BUILDING_NUMBER": d.get("BUILDING_NUMBER"),
+                "BUILDING_NAME": d.get("BUILDING_NAME"),
+                "SUB_BUILDING_NAME": d.get("SUB_BUILDING_NAME"),
+                "LAT": _f(d.get("LAT")) or _f(d.get("Y_COORDINATE")),
+                "LNG": _f(d.get("LNG")) or _f(d.get("X_COORDINATE")),
+            }
+            for d in records
+            if d.get("UPRN")
+        ]
+        self._cache[key] = slim
+        self._dirty += 1
+        if self._dirty >= 10:
+            self.flush()
+        return slim
 
     def flush(self) -> None:
         try:
