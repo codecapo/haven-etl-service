@@ -35,6 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--out-dir", help="Where to write artifacts (default: ./data)")
     g.add_argument("--match", action="store_true", help="Match no-UPRN rows to UPRNs via the OS Places API")
     g.add_argument("--min-score", type=float, help="Min OS match score to accept (default 0.4)")
+    g.add_argument("--links", action="store_true", help="Enrich UPRNs with USRN + TOID via OS Linked Identifiers")
     g.add_argument("--load", action="store_true", help="Also load matched rows into the council DB")
     g.add_argument("--table", default="property", help="Target table (default: property)")
     g.add_argument("--dry-run", action="store_true", help="With --load: report only, don't connect")
@@ -71,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
                 out_dir=args.out_dir,
                 match=args.match,
                 min_score=args.min_score,
+                links=args.links,
                 load=args.load,
                 table=args.table,
                 dry_run=args.dry_run,

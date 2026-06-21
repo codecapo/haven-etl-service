@@ -1,0 +1,127 @@
+"""OS Linked Identifiers API — enrich a UPRN with its related identifiers.
+
+Given a UPRN, returns the USRN (the street it sits on) and the OS MasterMap TOID
+(the topographic feature / building). Free on the OS Data Hub. Used to enrich
+properties that already have a UPRN — it does NOT do address→UPRN (that's
+os_places). Stdlib only; disk-cached + rate-limited like os_places.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+
+from .config import DATA_DIR
+
+BASE_URL = "https://api.os.uk/search/links/v1/identifierTypes/UPRN"
+
+
+@dataclass
+class LinkedIds:
+    usrn: str | None
+    toid: str | None
+
+
+def _collect(node, found: dict) -> None:
+    """Recursively gather the first identifier of each type from any response
+    shape (the API nests correlations differently across correlation methods)."""
+    if isinstance(node, dict):
+        itype = node.get("identifierType")
+        ident = node.get("identifier")
+        if isinstance(itype, str) and ident is not None and itype.upper() not in found:
+            found[itype.upper()] = str(ident)
+        for v in node.values():
+            _collect(v, found)
+    elif isinstance(node, list):
+        for v in node:
+            _collect(v, found)
+
+
+class OsLinksMatcher:
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        cache_path: str | Path | None = None,
+        rate_ms: int = 120,
+        timeout: int = 15,
+        max_retries: int = 3,
+    ):
+        if not api_key:
+            raise ValueError("OS Data Hub API key required (set OS_API_KEY)")
+        self.api_key = api_key
+        self.rate_s = max(0, rate_ms) / 1000.0
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.cache_path = Path(cache_path) if cache_path else DATA_DIR / "os_links_cache.json"
+        self._cache: dict = {}
+        if self.cache_path.exists():
+            try:
+                self._cache = json.loads(self.cache_path.read_text())
+            except Exception:
+                self._cache = {}
+        self._last_call = 0.0
+        self._dirty = 0
+
+    def _throttle(self) -> None:
+        if self.rate_s:
+            wait = self.rate_s - (time.monotonic() - self._last_call)
+            if wait > 0:
+                time.sleep(wait)
+        self._last_call = time.monotonic()
+
+    def _fetch(self, uprn: str) -> dict | None:
+        params = urllib.parse.urlencode({"key": self.api_key})
+        url = f"{BASE_URL}/{urllib.parse.quote(str(uprn))}?{params}"
+        for attempt in range(self.max_retries):
+            self._throttle()
+            try:
+                with urllib.request.urlopen(url, timeout=self.timeout) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    return None  # no linked identifiers for this UPRN
+                if e.code in (429, 500, 502, 503) and attempt < self.max_retries - 1:
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                raise
+            except urllib.error.URLError:
+                if attempt < self.max_retries - 1:
+                    time.sleep(1.0 * (attempt + 1))
+                    continue
+                raise
+        return None
+
+    @staticmethod
+    def parse(payload: dict | None) -> LinkedIds:
+        """Pure parser — pull USRN + TOID out of any response shape."""
+        found: dict = {}
+        _collect(payload, found)
+        return LinkedIds(usrn=found.get("USRN"), toid=found.get("TOID"))
+
+    def lookup(self, uprn: str) -> LinkedIds:
+        uprn = (uprn or "").strip()
+        if not uprn:
+            return LinkedIds(None, None)
+        if uprn in self._cache:
+            d = self._cache[uprn]
+            return LinkedIds(d.get("usrn"), d.get("toid"))
+        ids = self.parse(self._fetch(uprn))
+        self._cache[uprn] = {"usrn": ids.usrn, "toid": ids.toid}
+        self._dirty += 1
+        if self._dirty >= 25:
+            self.flush()
+        return ids
+
+    def flush(self) -> None:
+        try:
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            self.cache_path.write_text(json.dumps(self._cache))
+            self._dirty = 0
+        except Exception:
+            pass

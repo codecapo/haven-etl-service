@@ -65,7 +65,10 @@ def enrich(
     con.execute(
         f"""
         COPY (
-            SELECT c.uprn, c.property_reference, c.address_line1,
+            SELECT c.uprn,
+                   NULLIF(c.usrn,'') AS usrn,
+                   NULLIF(c.toid,'') AS toid,
+                   c.property_reference, c.address_line1,
                    NULLIF(c.address_line2,'') AS address_line2,
                    NULLIF(c.postcode,'') AS postcode,
                    NULLIF(c.estate,'') AS estate,

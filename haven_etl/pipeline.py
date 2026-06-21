@@ -28,6 +28,8 @@ def run(
     match: bool = False,
     min_score: float | None = None,
     matcher=None,
+    links: bool = False,
+    links_matcher=None,
 ) -> dict:
     out_dir = Path(out_dir) if out_dir else DATA_DIR
     mapper = _mapper(council)
@@ -56,6 +58,20 @@ def run(
         )
         candidates_csv = matched_csv
 
+    # OS Linked Identifiers enrichment: fill USRN + TOID for rows with a UPRN.
+    links_stats = None
+    if links:
+        from .links import enrich_links
+        from .config import OS_API_KEY, OS_PLACES_RATE_MS
+
+        if links_matcher is None:
+            from .os_links import OsLinksMatcher
+
+            links_matcher = OsLinksMatcher(OS_API_KEY, rate_ms=OS_PLACES_RATE_MS)
+        linked_csv = out_dir / f"{council}_candidates_linked.csv"
+        links_stats = enrich_links(candidates_csv, linked_csv, links_matcher)
+        candidates_csv = linked_csv
+
     enriched = enrich(candidates_csv, council=council, out_dir=out_dir)
 
     result = {
@@ -64,6 +80,7 @@ def run(
         "parsed_rows": len(rows),
         "candidates_csv": str(candidates_csv),
         **({"match": match_stats} if match_stats is not None else {}),
+        **({"links": links_stats} if links_stats is not None else {}),
         **{k: (str(v) if isinstance(v, Path) else v) for k, v in enriched.items()},
     }
 

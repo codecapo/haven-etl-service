@@ -17,6 +17,8 @@ from dataclasses import dataclass, asdict, field
 # Columns we populate on the Haven `property` table (geom is generated in PG).
 PROPERTY_COLUMNS = [
     "uprn",
+    "usrn",  # Unique Street Reference Number (OS Linked Identifiers)
+    "toid",  # OS MasterMap Topographic identifier (OS Linked Identifiers)
     "property_reference",
     "address_line1",
     "address_line2",
@@ -46,6 +48,8 @@ class PropertyRow:
     address_line2: str | None = None
     postcode: str | None = None
     uprn: str | None = None
+    usrn: str | None = None
+    toid: str | None = None
     estate: str | None = None
     tenure: str | None = None
     latitude: float | None = None

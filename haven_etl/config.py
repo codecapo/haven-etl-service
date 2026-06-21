@@ -15,8 +15,13 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 OS_UPRN_PARQUET = Path(os.getenv("OS_UPRN_PARQUET") or (DATA_DIR / "os_uprn.parquet")).resolve()
 
-# OS Places API (address → UPRN matching). Key from the OS Data Hub.
-OS_PLACES_API_KEY = os.getenv("OS_PLACES_API_KEY")
+# OS Data Hub API key. One project key grants access to every API added to that
+# project, so Places + Linked Identifiers share it (OS_PLACES_API_KEY kept as a
+# back-compatible fallback).
+OS_API_KEY = os.getenv("OS_API_KEY") or os.getenv("OS_PLACES_API_KEY")
+
+# OS Places API (address → UPRN matching).
+OS_PLACES_API_KEY = OS_API_KEY
 OS_PLACES_MIN_SCORE = float(os.getenv("OS_PLACES_MIN_SCORE") or "0.4")
 OS_PLACES_RATE_MS = int(os.getenv("OS_PLACES_RATE_MS") or "120")
 

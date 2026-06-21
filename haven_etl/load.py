@@ -17,6 +17,8 @@ from .councils.base import PROPERTY_COLUMNS
 # Columns we COPY (data_source is a PG enum; the rest map 1:1 to `property`).
 _COPY_COLS = [
     "uprn",
+    "usrn",
+    "toid",
     "property_reference",
     "address_line1",
     "address_line2",
@@ -68,7 +70,7 @@ def load_to_postgres(
         cur.execute(
             f"""
             create temp table _stage (
-              uprn text, property_reference text, address_line1 text,
+              uprn text, usrn text, toid text, property_reference text, address_line1 text,
               address_line2 text, postcode text, estate text, tenure text,
               latitude double precision, longitude double precision, data_source text
             ) on commit drop;
@@ -80,7 +82,7 @@ def load_to_postgres(
         cur.execute(
             f"""
             insert into {table} ({col_list}, master_version)
-            select uprn, property_reference, address_line1, address_line2,
+            select uprn, usrn, toid, property_reference, address_line1, address_line2,
                    coalesce(postcode, '') as postcode, estate, tenure,
                    latitude, longitude, coalesce(data_source, 'import')::data_source, 1
             from _stage
