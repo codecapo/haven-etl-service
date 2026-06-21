@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/*.parquet
+data/*.csv
+out/
+*.duckdb
+.DS_Store
