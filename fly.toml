@@ -1,0 +1,25 @@
+# Fly.io config — Haven ETL worker, London (UK data residency, co-located with
+# the council Supabase backends on AWS eu-west-2).
+#
+# This is a WORKER, not a web app: no [http_service], nothing is publicly exposed.
+# Jobs are launched as Machines that run to completion, e.g.:
+#   fly machine run . os-uprn --zip /data/osopenuprn.zip   --region lhr
+#   fly machine run . ingest --council camden --file /data/camden.xlsx --load
+#
+# Set per-council DB URLs as secrets (never in this file):
+#   fly secrets set HAVEN_DB_URL__CAMDEN="postgresql://...@...eu-west-2.pooler.supabase.com:5432/postgres"
+
+app = "haven-etl-service"        # change to your unique Fly app name
+primary_region = "lhr"           # London
+
+[build]
+
+# Persistent volume for the OS Open UPRN Parquet + working artifacts.
+# Create once:  fly volumes create haven_data --region lhr --size 10
+[mounts]
+  source = "haven_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

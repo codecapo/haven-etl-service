@@ -62,21 +62,32 @@ UK data residency, co-located with the council Supabase backends (AWS
 `eu-west-2`). It runs as a **worker** — no public HTTP — and jobs are Machines
 that run to completion.
 
+One-time setup (already done for `haven-etl-service` in the `personal` org):
+
 ```bash
-fly launch --no-deploy --copy-config --name haven-etl-service --region lhr
+fly apps create haven-etl-service -o personal
 fly volumes create haven_data --region lhr --size 10        # holds the OS UPRN Parquet
 fly secrets set HAVEN_DB_URL__CAMDEN="postgresql://...@...eu-west-2.pooler.supabase.com:5432/postgres"
-fly deploy
-
-# Run jobs as one-off Machines (args go straight to the CLI entrypoint):
-fly machine run . os-uprn --zip /data/osopenuprn.zip --region lhr   # build national Parquet
-fly machine run . ingest --council camden --file /data/camden.xlsx --load --region lhr
 ```
 
-Put the source files (OS zip, council exports) on the `/data` volume first
-(`fly sftp shell`) or fetch them in-job. **6-weekly OS refresh:** schedule a
-weekly Machine (`fly machine run --schedule weekly …`) with a date guard, or
-trigger from the PlatOps dashboard / an external cron.
+Jobs run as one-off Machines that build from the Dockerfile, mount the volume,
+run the CLI, and exit (no idle machine). Args go straight to the CLI:
+
+```bash
+# Deployment health check (self-contained, no data needed) — verified green in lhr:
+fly machine run . selftest --dockerfile Dockerfile -r lhr -v haven_data:/data --vm-memory 2048 -a haven-etl-service
+
+# Real jobs (put the source file on /data first, see below):
+fly machine run . os-uprn --zip /data/osopenuprn.zip --dockerfile Dockerfile -r lhr -v haven_data:/data --vm-memory 2048 -a haven-etl-service
+fly machine run . ingest --council camden --file /data/camden.xlsx --load --dockerfile Dockerfile -r lhr -v haven_data:/data -a haven-etl-service
+```
+
+Output goes to `fly logs -a haven-etl-service`. Add `--rm` (interactive terminals
+only) to auto-destroy the machine, or `fly machine destroy <id> --force` after.
+
+Get source files onto the `/data` volume via a temporary machine + `fly sftp`,
+or have the job fetch them. **6-weekly OS refresh:** a weekly scheduled Machine
+with a date guard, or trigger from the PlatOps dashboard / external cron.
 
 ## Adding a council
 

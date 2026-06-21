@@ -25,6 +25,9 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("stats", help="Row count + sample of a Parquet")
     s.add_argument("--parquet", required=True)
 
+    # selftest: self-contained deployment health check (no external files).
+    sub.add_parser("selftest", help="Run a self-contained pipeline health check")
+
     # ingest: run a council pipeline (parse → explode → enrich [→ load]).
     g = sub.add_parser("ingest", help="Ingest a council stock file")
     g.add_argument("--council", required=True, help="e.g. camden")
@@ -48,6 +51,13 @@ def main(argv: list[str] | None = None) -> int:
 
         _print({"parquet": args.parquet, **parquet_stats(args.parquet)})
         return 0
+
+    if args.cmd == "selftest":
+        from .selftest import run_selftest
+
+        result = run_selftest()
+        _print(result)
+        return 0 if result["ok"] else 1
 
     if args.cmd == "ingest":
         from .pipeline import run
